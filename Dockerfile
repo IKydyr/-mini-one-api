@@ -10,7 +10,7 @@ RUN go mod download
 COPY . .
 
 # Собираем приложение
-RUN go build -o /app/bin/server ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build -o /app/bin/server ./cmd/server
 
 # Финальный образ
 FROM alpine:latest
@@ -20,6 +20,7 @@ RUN apk --no-cache add ca-certificates
 WORKDIR /root/
 
 COPY --from=builder /app/bin/server .
+RUN chmod +x ./server
 
 EXPOSE 8080
 
