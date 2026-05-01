@@ -43,23 +43,19 @@ type ChatService interface {
 
 type chatService struct {
 	userRepo   repository.UserRepository
-	tokenRepo  repository.TokenRepository
 	chargeRepo repository.ChargeRepository
 	deepseek   *provider.DeepSeekProvider
 	logger     *slog.Logger
 }
 
-// NewChatService — конструктор
 func NewChatService(
 	userRepo repository.UserRepository,
-	tokenRepo repository.TokenRepository,
 	chargeRepo repository.ChargeRepository,
 	deepseek *provider.DeepSeekProvider,
 	logger *slog.Logger,
 ) ChatService {
 	return &chatService{
 		userRepo:   userRepo,
-		tokenRepo:  tokenRepo,
 		chargeRepo: chargeRepo,
 		deepseek:   deepseek,
 		logger:     logger,
@@ -231,8 +227,8 @@ func (s *chatService) ProcessChatStream(ctx context.Context, req ChatRequest) (<
 		}
 		defer stream.Close()
 
-		// Передаём чанки в канал
-		for chunk := range stream {
+		// ✅ ИТЕРАЦИЯ ПО КАНАЛУ (ваше решение!)
+		for chunk := range stream.Ch {
 			select {
 			case messages <- chunk:
 			case <-ctx.Done():

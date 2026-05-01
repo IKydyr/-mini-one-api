@@ -2,7 +2,7 @@ package service
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"log/slog"
 
 	"mini_one_api/internal/repository"
@@ -61,7 +61,7 @@ func (s *userService) GetUserInfo(ctx context.Context, req GetUserInfoRequest) (
 		s.logger.Error("Failed to get user", "user_id", req.UserID, "error", err)
 
 		// Превращаем ошибку репозитория в бизнес-ошибку
-		if fmt.Errorf("%w", err) == repository.ErrNotFound {
+		if errors.Is(err, repository.ErrNotFound) {
 			return nil, ErrUserNotFound
 		}
 		return nil, NewBusinessError("DB_ERROR", "Database error", 500, err)

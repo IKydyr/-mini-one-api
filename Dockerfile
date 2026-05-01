@@ -20,6 +20,7 @@ RUN apk --no-cache add ca-certificates
 WORKDIR /root/
 
 COPY --from=builder /app/bin/server .
+RUN chmod +x ./server
 
 EXPOSE 8080
 
