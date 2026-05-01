@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: oneapi-postgres
+    environment:
+      POSTGRES_USER: oneapi
+      POSTGRES_PASSWORD: oneapi123
+      POSTGRES_DB: oneapi
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oneapi"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    container_name: oneapi-app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgres://oneapi:oneapi123@postgres:5432/oneapi?sslmode=disable"
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
+      PORT: "8080"
+    ports:
+      - "8080:8080"
+    volumes:
+      - .:/app
+
+volumes:
+  postgres_data:
