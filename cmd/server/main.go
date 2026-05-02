@@ -83,8 +83,9 @@ func main() {
 	// =========================================================================
 	// 7. ИНИЦИАЛИЗАЦИЯ HANDLER (HTTP)
 	// =========================================================================
-	chatHandler := handler.NewChatHandler(chatService, logger)
-	userHandler := handler.NewUserHandler(userService, logger)
+	authService := service.NewAuthService(tokenRepo, logger)
+	chatHandler := handler.NewChatHandler(chatService, authService, logger)
+	userHandler := handler.NewUserHandler(userService, authService, logger)
 
 	// =========================================================================
 	// 8. НАСТРОЙКА HTTP РОУТЕРА

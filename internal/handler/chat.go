@@ -13,13 +13,15 @@ import (
 // ChatHandler — обработчик чат-запросов
 type ChatHandler struct {
 	chatService service.ChatService
+	authService service.AuthService
 	logger      *slog.Logger
 }
 
 // NewChatHandler — конструктор
-func NewChatHandler(chatService service.ChatService, logger *slog.Logger) *ChatHandler {
+func NewChatHandler(chatService service.ChatService, authService service.AuthService, logger *slog.Logger) *ChatHandler {
 	return &ChatHandler{
 		chatService: chatService,
+		authService: authService,
 		logger:      logger,
 	}
 }
@@ -36,6 +38,16 @@ func (h *ChatHandler) HandleChatCompletion(w http.ResponseWriter, r *http.Reques
 	token := r.Header.Get("Authorization")
 	if token == "" {
 		h.sendError(w, http.StatusUnauthorized, "missing_token", "Authorization header is required")
+		return
+	}
+	// Убираем "Bearer " если есть
+	if len(token) > 7 && token[:7] == "Bearer " {
+		token = token[7:]
+	}
+
+	userID, err := h.authService.Authenticate(r.Context(), token)
+	if err != nil {
+		h.sendError(w, http.StatusUnauthorized, "invalid_token", "Invalid or expired token")
 		return
 	}
 
@@ -58,7 +70,7 @@ func (h *ChatHandler) HandleChatCompletion(w http.ResponseWriter, r *http.Reques
 
 	// 5. МАППИНГ: HTTP DTO → Service DTO
 	serviceReq := service.ChatRequest{
-		UserID:   "test_user_1", // Для простоты — фиксированный пользователь
+		UserID:   userID,
 		Model:    httpReq.Model,
 		Stream:   httpReq.Stream,
 		Messages: make([]service.ChatMessage, len(httpReq.Messages)),
@@ -70,7 +82,12 @@ func (h *ChatHandler) HandleChatCompletion(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	// 6. Вызываем сервис
+	// 6. Вызываем сервис — обычный или стриминговый
+	if httpReq.Stream {
+		h.handleStream(w, r, serviceReq)
+		return
+	}
+
 	result, err := h.chatService.ProcessChat(r.Context(), serviceReq)
 	if err != nil {
 		h.logger.Error("Chat processing failed", "error", err)
@@ -136,4 +153,40 @@ func (h *ChatHandler) sendError(w http.ResponseWriter, status int, errType, mess
 	resp.Error.Type = errType
 	resp.Error.Code = http.StatusText(status)
 	h.sendJSON(w, status, resp)
+}
+
+func (h *ChatHandler) handleStream(w http.ResponseWriter, r *http.Request, req service.ChatRequest) {
+	// Устанавливаем SSE заголовки
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	messages, errChan := h.chatService.ProcessChatStream(r.Context(), req)
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		h.sendError(w, http.StatusInternalServerError, "streaming_unsupported", "Streaming not supported")
+		return
+	}
+
+	for {
+		select {
+		case chunk, open := <-messages:
+			if !open {
+				fmt.Fprintf(w, "data: [DONE]\n\n")
+				flusher.Flush()
+				return
+			}
+			fmt.Fprintf(w, "data: %s\n\n", chunk)
+			flusher.Flush()
+		case err := <-errChan:
+			if err != nil {
+				fmt.Fprintf(w, "data: [ERROR] %s\n\n", err.Error())
+				flusher.Flush()
+			}
+			return
+		case <-r.Context().Done():
+			return
+		}
+	}
 }
