@@ -70,7 +70,12 @@ func (h *ChatHandler) HandleChatCompletion(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	// 6. Вызываем сервис
+	// 6. Вызываем сервис — обычный или стриминговый
+	if httpReq.Stream {
+		h.handleStream(w, r, serviceReq)
+		return
+	}
+
 	result, err := h.chatService.ProcessChat(r.Context(), serviceReq)
 	if err != nil {
 		h.logger.Error("Chat processing failed", "error", err)
@@ -136,4 +141,40 @@ func (h *ChatHandler) sendError(w http.ResponseWriter, status int, errType, mess
 	resp.Error.Type = errType
 	resp.Error.Code = http.StatusText(status)
 	h.sendJSON(w, status, resp)
+}
+
+func (h *ChatHandler) handleStream(w http.ResponseWriter, r *http.Request, req service.ChatRequest) {
+	// Устанавливаем SSE заголовки
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	messages, errChan := h.chatService.ProcessChatStream(r.Context(), req)
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		h.sendError(w, http.StatusInternalServerError, "streaming_unsupported", "Streaming not supported")
+		return
+	}
+
+	for {
+		select {
+		case chunk, open := <-messages:
+			if !open {
+				fmt.Fprintf(w, "data: [DONE]\n\n")
+				flusher.Flush()
+				return
+			}
+			fmt.Fprintf(w, "data: %s\n\n", chunk)
+			flusher.Flush()
+		case err := <-errChan:
+			if err != nil {
+				fmt.Fprintf(w, "data: [ERROR] %s\n\n", err.Error())
+				flusher.Flush()
+			}
+			return
+		case <-r.Context().Done():
+			return
+		}
+	}
 }
