@@ -13,13 +13,15 @@ import (
 // ChatHandler — обработчик чат-запросов
 type ChatHandler struct {
 	chatService service.ChatService
+	authService service.AuthService
 	logger      *slog.Logger
 }
 
 // NewChatHandler — конструктор
-func NewChatHandler(chatService service.ChatService, logger *slog.Logger) *ChatHandler {
+func NewChatHandler(chatService service.ChatService, authService service.AuthService, logger *slog.Logger) *ChatHandler {
 	return &ChatHandler{
 		chatService: chatService,
+		authService: authService,
 		logger:      logger,
 	}
 }
@@ -36,6 +38,16 @@ func (h *ChatHandler) HandleChatCompletion(w http.ResponseWriter, r *http.Reques
 	token := r.Header.Get("Authorization")
 	if token == "" {
 		h.sendError(w, http.StatusUnauthorized, "missing_token", "Authorization header is required")
+		return
+	}
+	// Убираем "Bearer " если есть
+	if len(token) > 7 && token[:7] == "Bearer " {
+		token = token[7:]
+	}
+
+	userID, err := h.authService.Authenticate(r.Context(), token)
+	if err != nil {
+		h.sendError(w, http.StatusUnauthorized, "invalid_token", "Invalid or expired token")
 		return
 	}
 
@@ -58,7 +70,7 @@ func (h *ChatHandler) HandleChatCompletion(w http.ResponseWriter, r *http.Reques
 
 	// 5. МАППИНГ: HTTP DTO → Service DTO
 	serviceReq := service.ChatRequest{
-		UserID:   "test_user_1", // Для простоты — фиксированный пользователь
+		UserID:   userID,
 		Model:    httpReq.Model,
 		Stream:   httpReq.Stream,
 		Messages: make([]service.ChatMessage, len(httpReq.Messages)),

@@ -11,13 +11,15 @@ import (
 // UserHandler — обработчик запросов пользователя
 type UserHandler struct {
 	userService service.UserService
+	authService service.AuthService
 	logger      *slog.Logger
 }
 
 // NewUserHandler — конструктор
-func NewUserHandler(userService service.UserService, logger *slog.Logger) *UserHandler {
+func NewUserHandler(userService service.UserService, authService service.AuthService, logger *slog.Logger) *UserHandler {
 	return &UserHandler{
 		userService: userService,
+		authService: authService,
 		logger:      logger,
 	}
 }
@@ -37,8 +39,12 @@ func (h *UserHandler) GetUserInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 2. В реальном коде здесь была бы аутентификация
-	// Для простоты используем заглушку: userID = "test_user_1"
-	userID := "test_user_1"
+	// Для простоты используем заглушку: userID = "test_user_1" теперь заглушку убрал
+	userID, err := h.authService.Authenticate(r.Context(), token)
+	if err != nil {
+		h.sendError(w, http.StatusUnauthorized, "invalid_token", "Invalid or expired token")
+		return
+	}
 
 	// 3. Вызываем сервис
 	resp, err := h.userService.GetUserInfo(r.Context(), service.GetUserInfoRequest{
