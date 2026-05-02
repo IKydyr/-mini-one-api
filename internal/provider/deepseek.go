@@ -61,6 +61,20 @@ type DeepSeekResponse struct {
 // ============================================================================
 // DEEPSEEK STREAM (ваше правильное решение!)
 // ============================================================================
+// DeepSeekStreamChunk — полная структура одного чанка потокового ответа
+type DeepSeekStreamChunk struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	Created int64  `json:"created"`
+	Model   string `json:"model"`
+	Choices []struct {
+		Index int `json:"index"`
+		Delta struct {
+			Content string `json:"content"`
+		} `json:"delta"`
+		FinishReason *string `json:"finish_reason"`
+	} `json:"choices"`
+}
 
 // DeepSeekStream — управляемый поток для SSE (Server-Sent Events)
 type DeepSeekStream struct {
@@ -200,11 +214,18 @@ func (p *DeepSeekProvider) ChatCompletionStream(ctx context.Context, req DeepSee
 			}
 
 			// Отправляем чанк в канал
-			select {
-			case chunks <- data:
-			case <-streamCtx.Done():
-				return
+			var chunk DeepSeekStreamChunk
+			if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+				continue
 			}
+			if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
+				select {
+				case chunks <- chunk.Choices[0].Delta.Content:
+				case <-streamCtx.Done():
+					return
+				}
+			}
+
 		}
 
 		if err := scanner.Err(); err != nil {
